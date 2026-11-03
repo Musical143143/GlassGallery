@@ -2,6 +2,8 @@ package com.example.glassgallery.ui.screens
 
 import android.app.Activity
 import android.os.Build
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,11 +15,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -83,7 +87,6 @@ import com.example.glassgallery.ui.formatDateTime
 import com.example.glassgallery.ui.formatDuration
 import com.example.glassgallery.ui.glass.GlassSurface
 import com.example.glassgallery.ui.glass.GlassTopBar
-import com.example.glassgallery.ui.openExternally
 import com.example.glassgallery.ui.readExif
 import com.example.glassgallery.ui.shareMedia
 import kotlinx.coroutines.Dispatchers
@@ -93,8 +96,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /**
- * Zoom and pan for one photo page. Plain state values, so every change
- * redraws straight away. Gestures and buttons share the same clamped transform.
+ * Zoom and pan state for one photo page. Plain state values, so every change
+ * redraws straight away. Pinch, double-tap and the zoom buttons share it.
  */
 class ZoomState {
     var scale by mutableFloatStateOf(1f)
@@ -111,7 +114,6 @@ class ZoomState {
         offsetY = offsetY.coerceIn(-maxY, maxY)
     }
 
-    /** Called while fingers are on the screen. */
     fun applyGesture(zoomChange: Float, pan: Offset) {
         scale = (scale * zoomChange).coerceIn(1f, 5f)
         offsetX += pan.x
@@ -193,7 +195,7 @@ fun ViewerScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             beyondViewportPageCount = 1,
-            // Swiping between photos is paused while zoomed, so panning stays put.
+            // Swiping between photos pauses while zoomed, so panning stays put.
             userScrollEnabled = !currentZoom.isZoomed,
             key = { items[it].key },
         ) { page ->
@@ -201,7 +203,7 @@ fun ViewerScreen(
             if (item.isVideo) {
                 VideoPage(
                     item = item,
-                    onPlay = { openExternally(context, item) },
+                    isCurrent = page == pagerState.currentPage,
                     onTap = { chromeVisible = !chromeVisible },
                 )
             } else {
@@ -272,12 +274,12 @@ fun ViewerScreen(
                             IconButton(onClick = { onEdit(current.key) }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Edit")
                             }
-                        }
-                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale / 1.6f) } }) {
-                            Icon(Icons.Filled.ZoomOut, contentDescription = "Zoom out")
-                        }
-                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale * 1.6f) } }) {
-                            Icon(Icons.Filled.ZoomIn, contentDescription = "Zoom in")
+                            IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale / 1.6f) } }) {
+                                Icon(Icons.Filled.ZoomOut, contentDescription = "Zoom out")
+                            }
+                            IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale * 1.6f) } }) {
+                                Icon(Icons.Filled.ZoomIn, contentDescription = "Zoom in")
+                            }
                         }
                         IconButton(onClick = { slideshow = !slideshow }) {
                             Icon(
@@ -318,10 +320,6 @@ private fun ZoomablePhoto(item: MediaItem, zoom: ZoomState, onTap: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        zoom.applyGesture(zoomChange, panChange)
-    }
-
     Box(
         Modifier
             .fillMaxSize()
@@ -337,8 +335,25 @@ private fun ZoomablePhoto(item: MediaItem, zoom: ZoomState, onTap: () -> Unit) {
                     },
                 )
             }
-            // Only claim pan gestures while zoomed in, so the pager still swipes at 1x.
-            .transformable(state = transformState, canPan = { zoom.isZoomed }),
+            .pointerInput(item.key) {
+                // Pinch with two fingers. One finger pans only while zoomed; at 1x it is
+                // left alone so the pager can still swipe between photos.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val multiTouch = event.changes.size > 1
+                        if (multiTouch || zoom.isZoomed) {
+                            val zoomChange = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            if (zoomChange != 1f || pan != Offset.Zero) {
+                                zoom.applyGesture(zoomChange, pan)
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
     ) {
         AsyncImage(
             model = ImageRequest.Builder(context)
@@ -360,31 +375,68 @@ private fun ZoomablePhoto(item: MediaItem, zoom: ZoomState, onTap: () -> Unit) {
 }
 
 @Composable
-private fun VideoPage(item: MediaItem, onPlay: () -> Unit, onTap: () -> Unit) {
+private fun VideoPage(item: MediaItem, isCurrent: Boolean, onTap: () -> Unit) {
+    val holder = remember(item.key) { arrayOfNulls<VideoView>(1) }
+    var playing by remember(item.key) { mutableStateOf(false) }
+
+    // Pause when the user swipes away, and keep the play button in sync with the player.
+    LaunchedEffect(isCurrent) {
+        if (!isCurrent) {
+            holder[0]?.pause()
+            playing = false
+        }
+    }
+    LaunchedEffect(item.key) {
+        while (true) {
+            delay(250)
+            playing = holder[0]?.isPlaying == true
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
+            .background(Color.Black)
             .pointerInput(item.key) {
                 detectTapGestures(onTap = { onTap() })
             },
         contentAlignment = Alignment.Center,
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(item.uri)
-                .crossfade(true)
-                .build(),
-            contentDescription = item.name,
-            contentScale = ContentScale.Fit,
+        AndroidView(
             modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setVideoURI(item.uri)
+                    val controller = MediaController(ctx)
+                    controller.setAnchorView(this)
+                    setMediaController(controller)
+                    setOnPreparedListener { mp ->
+                        mp.isLooping = false
+                        seekTo(1)
+                    }
+                    holder[0] = this
+                }
+            },
+            onRelease = { view -> view.stopPlayback() },
         )
-        IconButton(onClick = onPlay, modifier = Modifier.size(84.dp)) {
-            Icon(
-                imageVector = Icons.Filled.PlayCircle,
-                contentDescription = "Play video",
-                tint = Color.White,
+
+        if (!playing) {
+            IconButton(
+                onClick = {
+                    holder[0]?.let {
+                        it.start()
+                        playing = true
+                    }
+                },
                 modifier = Modifier.size(84.dp),
-            )
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayCircle,
+                    contentDescription = "Play video",
+                    tint = Color.White,
+                    modifier = Modifier.size(84.dp),
+                )
+            }
         }
     }
 }
