@@ -4,8 +4,12 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.widget.Toast
+import androidx.exifinterface.media.ExifInterface
 import com.example.glassgallery.data.MediaItem
 import java.text.DateFormat
 import java.util.Date
@@ -45,6 +49,32 @@ fun openExternally(context: Context, item: MediaItem) {
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(context, "No app found to play this video", Toast.LENGTH_SHORT).show()
     }
+}
+
+/** Asks the system to delete the given items. Needs Android 11 (API 30) or newer. */
+fun deleteRequestSender(context: Context, uris: List<Uri>): IntentSender? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && uris.isNotEmpty()) {
+        MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
+    } else {
+        null
+    }
+
+/** Reads a few useful EXIF fields. Returns an empty list if the file has none. */
+fun readExif(context: Context, uri: Uri): List<Pair<String, String>> {
+    val exif = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { ExifInterface(it) }
+    }.getOrNull() ?: return emptyList()
+
+    val rows = mutableListOf<Pair<String, String>>()
+    fun add(label: String, key: String, prefix: String = "", suffix: String = "") {
+        exif.getAttribute(key)?.takeIf { it.isNotBlank() }?.let { rows += label to (prefix + it + suffix) }
+    }
+    add("Camera", ExifInterface.TAG_MODEL)
+    add("Aperture", ExifInterface.TAG_F_NUMBER, prefix = "f/")
+    add("Exposure", ExifInterface.TAG_EXPOSURE_TIME, suffix = " s")
+    add("ISO", ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
+    add("Focal length", ExifInterface.TAG_FOCAL_LENGTH, suffix = " mm")
+    return rows
 }
 
 fun formatDuration(ms: Long): String {

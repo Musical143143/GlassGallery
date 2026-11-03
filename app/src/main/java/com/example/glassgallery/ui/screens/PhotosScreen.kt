@@ -1,5 +1,10 @@
 package com.example.glassgallery.ui.screens
 
+import android.app.Activity
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,12 +12,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.width
@@ -20,11 +27,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +45,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -41,7 +57,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.glassgallery.data.MediaItem
 import com.example.glassgallery.ui.GalleryViewModel
 import com.example.glassgallery.ui.MediaFilter
+import com.example.glassgallery.ui.SortOrder
 import com.example.glassgallery.ui.components.PhotoGrid
+import com.example.glassgallery.ui.deleteRequestSender
 import com.example.glassgallery.ui.glass.GlassSurface
 import com.example.glassgallery.ui.glass.GlassTopBar
 import com.example.glassgallery.ui.shareMedia
@@ -54,11 +72,23 @@ fun PhotosScreen(
     val media by vm.media.collectAsStateWithLifecycle()
     val sections by vm.sections.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
+    val sort by vm.sort.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var pendingDeleteKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val deleteLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            vm.markDeleted(pendingDeleteKeys)
+        }
+    }
 
     val contentPadding = PaddingValues(
         start = 8.dp,
@@ -91,8 +121,30 @@ fun PhotosScreen(
                         Text(
                             text = "${media.size}",
                             style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(end = 12.dp),
+                            modifier = Modifier.padding(end = 4.dp),
                         )
+                        Box {
+                            IconButton(onClick = { sortMenuOpen = true }) {
+                                Icon(Icons.Filled.Sort, contentDescription = "Sort")
+                            }
+                            DropdownMenu(
+                                expanded = sortMenuOpen,
+                                onDismissRequest = { sortMenuOpen = false },
+                            ) {
+                                SortOrder.entries.forEach { order ->
+                                    DropdownMenuItem(
+                                        text = { Text(order.label) },
+                                        onClick = {
+                                            vm.setSort(order)
+                                            sortMenuOpen = false
+                                        },
+                                        trailingIcon = {
+                                            if (order == sort) Icon(Icons.Filled.Check, contentDescription = null)
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     },
                 )
                 SearchAndFilters(
@@ -110,11 +162,28 @@ fun PhotosScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = {
+                            vm.setSelection(sections.flatMap { s -> s.items.map { it.key } }.toSet())
+                        }) {
+                            Icon(Icons.Filled.SelectAll, contentDescription = "Select all")
+                        }
                         IconButton(onClick = vm::favoriteSelection) {
                             Icon(Icons.Filled.Favorite, contentDescription = "Favorite selected")
                         }
                         IconButton(onClick = { shareMedia(context, media.filter { it.key in selection }) }) {
                             Icon(Icons.Filled.Share, contentDescription = "Share selected")
+                        }
+                        IconButton(onClick = {
+                            val chosen = media.filter { it.key in selection }
+                            val sender = deleteRequestSender(context, chosen.map { it.uri })
+                            if (sender == null) {
+                                Toast.makeText(context, "Deleting needs Android 11 or newer", Toast.LENGTH_SHORT).show()
+                            } else {
+                                pendingDeleteKeys = selection
+                                deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                            }
+                        }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
                         }
                     },
                 )

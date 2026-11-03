@@ -40,8 +40,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.glassgallery.ui.editing.EditorScreen
 import com.example.glassgallery.ui.glass.GlassBottomBar
 import com.example.glassgallery.ui.glass.GlassTab
 import com.example.glassgallery.ui.screens.AlbumDetailScreen
@@ -54,6 +55,7 @@ object Routes {
     const val ALBUMS = "albums"
     const val ALBUM = "album/{bucketId}"
     const val VIEWER = "viewer/{key}"
+    const val EDITOR = "editor/{key}"
 }
 
 private fun requiredPermissions(): Array<String> =
@@ -143,6 +145,17 @@ fun GlassGalleryApp(vm: GalleryViewModel = viewModel()) {
                     vm = vm,
                     startKey = entry.arguments?.getString("key").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onEdit = { key -> navController.navigate("editor/$key") },
+                )
+            }
+            composable(
+                route = Routes.EDITOR,
+                arguments = listOf(navArgument("key") { type = NavType.StringType }),
+            ) { entry ->
+                EditorScreen(
+                    vm = vm,
+                    startKey = entry.arguments?.getString("key").orEmpty(),
+                    onDone = { navController.popBackStack() },
                 )
             }
         }

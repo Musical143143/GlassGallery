@@ -25,6 +25,13 @@ enum class MediaFilter(val label: String) {
     VIDEOS("Videos"),
 }
 
+enum class SortOrder(val label: String) {
+    NEWEST("Newest first"),
+    OLDEST("Oldest first"),
+    NAME("Name (A–Z)"),
+    LARGEST("Largest first"),
+}
+
 class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = MediaRepository(app)
@@ -49,8 +56,11 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    /** The main grid: filtered, searched, and grouped by day. */
-    val sections: StateFlow<List<DaySection>> = combine(_media, _favorites, _filter, _query) { items, favs, mode, q ->
+    private val _sort = MutableStateFlow(SortOrder.NEWEST)
+    val sort: StateFlow<SortOrder> = _sort.asStateFlow()
+
+    /** The main grid: filtered, searched, sorted, and grouped. */
+    val sections: StateFlow<List<DaySection>> = combine(_media, _favorites, _filter, _query, _sort) { items, favs, mode, q, order ->
         val filtered = items.filter { item ->
             val modeOk = when (mode) {
                 MediaFilter.ALL -> true
@@ -59,7 +69,12 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             }
             modeOk && (q.isBlank() || item.name.contains(q, ignoreCase = true))
         }
-        buildDaySections(filtered)
+        when (order) {
+            SortOrder.NEWEST -> buildDaySections(filtered.sortedByDescending { it.dateTaken })
+            SortOrder.OLDEST -> buildDaySections(filtered.sortedBy { it.dateTaken }).asReversed()
+            SortOrder.NAME -> listOf(DaySection("all", "All items", filtered.sortedBy { it.name.lowercase() }))
+            SortOrder.LARGEST -> listOf(DaySection("all", "All items", filtered.sortedByDescending { it.sizeBytes }))
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val albums: StateFlow<List<Album>> = _media.map { items ->
@@ -74,8 +89,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     var viewerItems: List<MediaItem> = emptyList()
         private set
 
-    fun load() {
-        if (loadStarted) return
+    fun load(force: Boolean = false) {
+        if (loadStarted && !force) return
         loadStarted = true
         viewModelScope.launch {
             _loading.value = true
@@ -92,12 +107,20 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         _filter.value = mode
     }
 
+    fun setSort(order: SortOrder) {
+        _sort.value = order
+    }
+
     fun setQuery(text: String) {
         _query.value = text
     }
 
     fun toggleSelection(key: String) {
         _selection.update { if (key in it) it - key else it + key }
+    }
+
+    fun setSelection(keys: Set<String>) {
+        _selection.value = keys
     }
 
     fun clearSelection() {
@@ -111,6 +134,17 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun favoriteSelection() {
         updateFavorites(_selection.value)
         clearSelection()
+    }
+
+    /** Removes items the system has deleted, so the grid updates without a reload. */
+    fun markDeleted(keys: Set<String>) {
+        _media.update { list -> list.filterNot { it.key in keys } }
+        _selection.update { it - keys }
+        _favorites.update { favs ->
+            val next = favs - keys
+            favoritesStore.save(next)
+            next
+        }
     }
 
     private fun updateFavorites(keys: Set<String>) {
