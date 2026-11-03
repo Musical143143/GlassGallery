@@ -8,6 +8,8 @@
         android:maxSdkVersion="32" />
 
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:name=".GlassGalleryApplication"
         android:label="Glass Gallery"
         android:supportsRtl="true"
