@@ -40,7 +40,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.navArgument
+import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
 import com.example.glassgallery.ui.glass.GlassBottomBar
 import com.example.glassgallery.ui.glass.GlassTab

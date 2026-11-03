@@ -3,7 +3,7 @@ package com.example.glassgallery
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import coil.video.VideoFrameDecoder
+import coil.decode.VideoFrameDecoder
 
 class GlassGalleryApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader =
