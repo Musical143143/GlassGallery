@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -49,6 +51,7 @@ import com.example.glassgallery.ui.screens.AlbumDetailScreen
 import com.example.glassgallery.ui.screens.AlbumsScreen
 import com.example.glassgallery.ui.screens.PhotosScreen
 import com.example.glassgallery.ui.screens.ViewerScreen
+import com.example.glassgallery.ui.theme.GlassGalleryTheme
 
 object Routes {
     const val PHOTOS = "photos"
@@ -67,6 +70,16 @@ private fun requiredPermissions(): Array<String> =
 
 @Composable
 fun GlassGalleryApp(vm: GalleryViewModel = viewModel()) {
+    val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    GlassGalleryTheme(mode = themeMode) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            GalleryContent(vm)
+        }
+    }
+}
+
+@Composable
+private fun GalleryContent(vm: GalleryViewModel) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(

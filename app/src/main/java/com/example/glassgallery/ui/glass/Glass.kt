@@ -8,19 +8,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -40,12 +38,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.glassgallery.ui.theme.LocalGlassTint
+import com.example.glassgallery.ui.theme.LocalIsDark
 
 /**
- * Frosted glass panel: a translucent tint with a top-to-bottom sheen, a light
- * rim that catches the edge, and a soft shadow. The look is an approximation
- * of iOS material, built from gradients rather than a live backdrop blur.
+ * Frosted glass panel. Light mode uses a bright frost with a white rim; dark
+ * mode uses smoked graphite. It is a gradient approximation, not a live blur.
  */
 @Composable
 fun GlassSurface(
@@ -53,28 +50,23 @@ fun GlassSurface(
     shape: Shape = RoundedCornerShape(28.dp),
     content: @Composable () -> Unit,
 ) {
-    val tint = LocalGlassTint.current
+    val dark = LocalIsDark.current
+    val top = if (dark) Color(0xFF3A3A3C).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.82f)
+    val bottom = if (dark) Color(0xFF1C1C1E).copy(alpha = 0.66f) else Color.White.copy(alpha = 0.62f)
+    val rimTop = if (dark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.95f)
+    val rimBottom = if (dark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.25f)
+
     Box(
         modifier = modifier
             .shadow(
                 elevation = 14.dp,
                 shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.18f),
-                spotColor = Color.Black.copy(alpha = 0.22f),
+                ambientColor = Color.Black.copy(alpha = 0.14f),
+                spotColor = Color.Black.copy(alpha = 0.18f),
             )
             .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(tint.copy(alpha = 0.78f), tint.copy(alpha = 0.50f)),
-                ),
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.75f), Color.White.copy(alpha = 0.08f)),
-                ),
-                shape = shape,
-            ),
+            .background(Brush.verticalGradient(listOf(top, bottom)))
+            .border(1.dp, Brush.linearGradient(listOf(rimTop, rimBottom)), shape),
     ) {
         content()
     }

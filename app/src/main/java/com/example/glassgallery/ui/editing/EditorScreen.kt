@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -67,9 +69,27 @@ import kotlinx.coroutines.withContext
 
 enum class EditorTab(val label: String) {
     ADJUST("Adjust"),
+    FILTERS("Filters"),
     CROP("Crop"),
     ROTATE("Rotate"),
 }
+
+private data class Preset(
+    val label: String,
+    val brightness: Float,
+    val contrast: Float,
+    val saturation: Float,
+    val warmth: Float,
+)
+
+private val presets = listOf(
+    Preset("Original", 0f, 1f, 1f, 0f),
+    Preset("Vivid", 0.03f, 1.15f, 1.5f, 0f),
+    Preset("Warm", 0.02f, 1f, 1.05f, 0.4f),
+    Preset("Cool", 0f, 1.05f, 0.95f, -0.4f),
+    Preset("Mono", 0f, 1.1f, 0f, 0f),
+    Preset("Fade", 0.06f, 0.85f, 0.7f, 0.05f),
+)
 
 @Composable
 fun EditorScreen(
@@ -89,6 +109,7 @@ fun EditorScreen(
     var edits by remember { mutableStateOf(EditState()) }
     var tab by remember { mutableStateOf(EditorTab.ADJUST) }
     var saving by remember { mutableStateOf(false) }
+    var showOriginal by remember { mutableStateOf(false) }
 
     // Animated so rotations and flips feel physical instead of snapping.
     val angle by animateFloatAsState(
@@ -132,11 +153,21 @@ fun EditorScreen(
             model = ImageRequest.Builder(context).data(item.uri).build(),
             contentDescription = item.name,
             contentScale = if (boxRatio == null) ContentScale.Fit else ContentScale.Crop,
-            colorFilter = ColorFilter.colorMatrix(ColorMatrix(edits.colorMatrix(255f))),
+            colorFilter = if (showOriginal) null else ColorFilter.colorMatrix(ColorMatrix(edits.colorMatrix(255f))),
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.92f)
                 .then(if (boxRatio != null) Modifier.aspectRatio(boxRatio) else Modifier.fillMaxHeight(0.6f))
+                .pointerInput(Unit) {
+                    // Press and hold to see the original without edits.
+                    detectTapGestures(
+                        onPress = {
+                            showOriginal = true
+                            tryAwaitRelease()
+                            showOriginal = false
+                        },
+                    )
+                }
                 .graphicsLayer {
                     rotationZ = angle
                     scaleX = flipX
@@ -169,7 +200,16 @@ fun EditorScreen(
                 .padding(12.dp),
         ) {
             Column(Modifier.padding(16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Hold the photo to compare with the original",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     EditorTab.entries.forEach { t ->
                         FilterChip(
                             selected = tab == t,
@@ -186,6 +226,7 @@ fun EditorScreen(
                 ) { current ->
                     when (current) {
                         EditorTab.ADJUST -> AdjustControls(edits) { edits = it }
+                        EditorTab.FILTERS -> FilterControls(edits) { edits = it }
                         EditorTab.CROP -> CropControls(edits) { edits = it }
                         EditorTab.ROTATE -> RotateControls(edits) { edits = it }
                     }
@@ -206,6 +247,35 @@ private fun AdjustControls(edits: EditState, onChange: (EditState) -> Unit) {
             onChange(edits.copy(brightness = 0f, contrast = 1f, saturation = 1f, warmth = 0f))
         }) {
             Text("Reset adjustments")
+        }
+    }
+}
+
+@Composable
+private fun FilterControls(edits: EditState, onChange: (EditState) -> Unit) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        presets.forEach { p ->
+            val selected = edits.brightness == p.brightness &&
+                edits.contrast == p.contrast &&
+                edits.saturation == p.saturation &&
+                edits.warmth == p.warmth
+            FilterChip(
+                selected = selected,
+                onClick = {
+                    onChange(
+                        edits.copy(
+                            brightness = p.brightness,
+                            contrast = p.contrast,
+                            saturation = p.saturation,
+                            warmth = p.warmth,
+                        ),
+                    )
+                },
+                label = { Text(p.label) },
+            )
         }
     }
 }

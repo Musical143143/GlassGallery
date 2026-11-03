@@ -39,6 +39,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -59,10 +60,11 @@ fun PhotoGrid(
     onClick: (MediaItem) -> Unit,
     onLongClick: (MediaItem) -> Unit,
     modifier: Modifier = Modifier,
+    cellDp: Int = 112,
 ) {
     val haptics = LocalHapticFeedback.current
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 112.dp),
+        columns = GridCells.Adaptive(minSize = cellDp.dp),
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -101,7 +103,7 @@ private fun DayHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 8.dp, top = 16.dp, bottom = 8.dp),

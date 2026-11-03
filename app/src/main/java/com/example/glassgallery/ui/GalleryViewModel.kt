@@ -8,6 +8,8 @@ import com.example.glassgallery.data.DaySection
 import com.example.glassgallery.data.FavoritesStore
 import com.example.glassgallery.data.MediaItem
 import com.example.glassgallery.data.MediaRepository
+import com.example.glassgallery.data.SettingsStore
+import com.example.glassgallery.data.ThemeMode
 import com.example.glassgallery.data.buildDaySections
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,10 +34,13 @@ enum class SortOrder(val label: String) {
     LARGEST("Largest first"),
 }
 
+private val gridSizes = listOf(80, 112, 150)
+
 class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = MediaRepository(app)
     private val favoritesStore = FavoritesStore(app)
+    private val settings = SettingsStore(app)
     private var loadStarted = false
 
     private val _media = MutableStateFlow<List<MediaItem>>(emptyList())
@@ -58,6 +63,12 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _sort = MutableStateFlow(SortOrder.NEWEST)
     val sort: StateFlow<SortOrder> = _sort.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(settings.themeMode())
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _cellDp = MutableStateFlow(settings.gridCellDp())
+    val cellDp: StateFlow<Int> = _cellDp.asStateFlow()
 
     /** The main grid: filtered, searched, sorted, and grouped. */
     val sections: StateFlow<List<DaySection>> = combine(_media, _favorites, _filter, _query, _sort) { items, favs, mode, q, order ->
@@ -97,6 +108,18 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             _media.value = repository.loadMedia()
             _loading.value = false
         }
+    }
+
+    fun cycleTheme() {
+        val next = ThemeMode.entries[(_themeMode.value.ordinal + 1) % ThemeMode.entries.size]
+        _themeMode.value = next
+        settings.saveThemeMode(next)
+    }
+
+    fun cycleCell() {
+        val next = gridSizes[(gridSizes.indexOf(_cellDp.value) + 1) % gridSizes.size]
+        _cellDp.value = next
+        settings.saveGridCellDp(next)
     }
 
     fun openViewer(items: List<MediaItem>) {

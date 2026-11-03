@@ -12,23 +12,29 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
@@ -53,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.glassgallery.data.MediaItem
+import com.example.glassgallery.data.ThemeMode
 import com.example.glassgallery.ui.GalleryViewModel
 import com.example.glassgallery.ui.MediaFilter
 import com.example.glassgallery.ui.SortOrder
@@ -75,6 +82,8 @@ fun PhotosScreen(
     val selection by vm.selection.collectAsStateWithLifecycle()
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val cellDp by vm.cellDp.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var sortMenuOpen by remember { mutableStateOf(false) }
@@ -86,6 +95,12 @@ fun PhotosScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             vm.markDeleted(pendingDeleteKeys)
         }
+    }
+
+    val themeIcon = when (themeMode) {
+        ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
+        ThemeMode.LIGHT -> Icons.Filled.LightMode
+        ThemeMode.DARK -> Icons.Filled.DarkMode
     }
 
     val contentPadding = PaddingValues(
@@ -101,6 +116,7 @@ fun PhotosScreen(
             selection = selection,
             favorites = favorites,
             contentPadding = contentPadding,
+            cellDp = cellDp,
             onClick = { item ->
                 if (selection.isEmpty()) {
                     onOpen(sections.flatMap { it.items }, item.key)
@@ -119,8 +135,14 @@ fun PhotosScreen(
                         Text(
                             text = "${media.size}",
                             style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(end = 4.dp),
+                            modifier = Modifier.padding(end = 2.dp),
                         )
+                        IconButton(onClick = vm::cycleCell) {
+                            Icon(Icons.Filled.GridView, contentDescription = "Grid size")
+                        }
+                        IconButton(onClick = vm::cycleTheme) {
+                            Icon(themeIcon, contentDescription = "Theme")
+                        }
                         Box {
                             IconButton(onClick = { sortMenuOpen = true }) {
                                 Icon(Icons.Filled.Sort, contentDescription = "Sort")

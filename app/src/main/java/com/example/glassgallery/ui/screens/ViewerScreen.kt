@@ -6,8 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ZoomIn
@@ -50,9 +52,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -86,49 +87,54 @@ import com.example.glassgallery.ui.openExternally
 import com.example.glassgallery.ui.readExif
 import com.example.glassgallery.ui.shareMedia
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /**
- * Zoom and pan state for one photo page. Animatables let gestures, double taps
- * and the zoom buttons all share one smooth, clamped transform.
+ * Zoom and pan for one photo page. Plain state values, so every change
+ * redraws straight away. Gestures and buttons share the same clamped transform.
  */
-@Stable
 class ZoomState {
-    val scale = Animatable(1f)
-    val offsetX = Animatable(0f)
-    val offsetY = Animatable(0f)
+    var scale by mutableFloatStateOf(1f)
+    var offsetX by mutableFloatStateOf(0f)
+    var offsetY by mutableFloatStateOf(0f)
     var viewport: Size = Size.Zero
 
-    val isZoomed: Boolean get() = scale.value > 1.01f
+    val isZoomed: Boolean get() = scale > 1.01f
 
-    private suspend fun clamp() {
-        val maxX = max(0f, viewport.width * (scale.value - 1f) / 2f)
-        val maxY = max(0f, viewport.height * (scale.value - 1f) / 2f)
-        offsetX.snapTo(offsetX.value.coerceIn(-maxX, maxX))
-        offsetY.snapTo(offsetY.value.coerceIn(-maxY, maxY))
+    private fun clamp() {
+        val maxX = max(0f, viewport.width * (scale - 1f) / 2f)
+        val maxY = max(0f, viewport.height * (scale - 1f) / 2f)
+        offsetX = offsetX.coerceIn(-maxX, maxX)
+        offsetY = offsetY.coerceIn(-maxY, maxY)
     }
 
     /** Called while fingers are on the screen. */
-    suspend fun applyGesture(zoomChange: Float, pan: Offset) {
-        scale.snapTo((scale.value * zoomChange).coerceIn(1f, 5f))
-        offsetX.snapTo(offsetX.value + pan.x)
-        offsetY.snapTo(offsetY.value + pan.y)
+    fun applyGesture(zoomChange: Float, pan: Offset) {
+        scale = (scale * zoomChange).coerceIn(1f, 5f)
+        offsetX += pan.x
+        offsetY += pan.y
         clamp()
     }
 
     /** Animates to [target], keeping [focus] (relative to the viewport centre) in place. */
     suspend fun animateTo(target: Float, focus: Offset = Offset.Zero) {
         val t = target.coerceIn(1f, 5f)
+        val startScale = scale
+        val startX = offsetX
+        val startY = offsetY
         val endX = -focus.x * (t - 1f)
         val endY = -focus.y * (t - 1f)
-        val spec = tween<Float>(durationMillis = 280, easing = FastOutSlowInEasing)
-        coroutineScope {
-            launch { scale.animateTo(t, spec) }
-            launch { offsetX.animateTo(endX, spec) }
-            launch { offsetY.animateTo(endY, spec) }
+        animate(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+        ) { p, _ ->
+            scale = startScale + (t - startScale) * p
+            offsetX = startX + (endX - startX) * p
+            offsetY = startY + (endY - startY) * p
         }
         clamp()
     }
@@ -156,13 +162,22 @@ fun ViewerScreen(
         items.indexOfFirst { it.key == startKey }.coerceAtLeast(0)
     }
     val pagerState = rememberPagerState(initialPage = startPage, pageCount = { items.size })
-    val zoomStates = remember { mutableStateMapOf<String, ZoomState>() }
+    val zoomStates = remember { HashMap<String, ZoomState>() }
     var chromeVisible by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
+    var slideshow by remember { mutableStateOf(false) }
     var pendingDeleteKey by remember { mutableStateOf<String?>(null) }
 
     val current = items[pagerState.currentPage.coerceIn(0, items.lastIndex)]
     val currentZoom = zoomStates.getOrPut(current.key) { ZoomState() }
+
+    // Advances to the next photo after a pause; restarts the timer on every page change.
+    LaunchedEffect(slideshow, pagerState.currentPage) {
+        if (slideshow) {
+            delay(3500)
+            pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
+        }
+    }
 
     val deleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -178,7 +193,7 @@ fun ViewerScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             beyondViewportPageCount = 1,
-            // Swiping between photos is disabled while zoomed, so panning stays put.
+            // Swiping between photos is paused while zoomed, so panning stays put.
             userScrollEnabled = !currentZoom.isZoomed,
             key = { items[it].key },
         ) { page ->
@@ -258,11 +273,17 @@ fun ViewerScreen(
                                 Icon(Icons.Filled.Edit, contentDescription = "Edit")
                             }
                         }
-                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale.value / 1.6f) } }) {
+                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale / 1.6f) } }) {
                             Icon(Icons.Filled.ZoomOut, contentDescription = "Zoom out")
                         }
-                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale.value * 1.6f) } }) {
+                        IconButton(onClick = { scope.launch { currentZoom.animateTo(currentZoom.scale * 1.6f) } }) {
                             Icon(Icons.Filled.ZoomIn, contentDescription = "Zoom in")
+                        }
+                        IconButton(onClick = { slideshow = !slideshow }) {
+                            Icon(
+                                imageVector = if (slideshow) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (slideshow) "Stop slideshow" else "Start slideshow",
+                            )
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             IconButton(onClick = {
@@ -298,7 +319,7 @@ private fun ZoomablePhoto(item: MediaItem, zoom: ZoomState, onTap: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scope.launch { zoom.applyGesture(zoomChange, panChange) }
+        zoom.applyGesture(zoomChange, panChange)
     }
 
     Box(
@@ -329,10 +350,10 @@ private fun ZoomablePhoto(item: MediaItem, zoom: ZoomState, onTap: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = zoom.scale.value
-                    scaleY = zoom.scale.value
-                    translationX = zoom.offsetX.value
-                    translationY = zoom.offsetY.value
+                    scaleX = zoom.scale
+                    scaleY = zoom.scale
+                    translationX = zoom.offsetX
+                    translationY = zoom.offsetY
                 },
         )
     }
